@@ -1,5 +1,5 @@
 /*
- * Arduino UNO R4 Oscilloscope using a 160x80 IPS TFT Version 1.01
+ * Arduino UNO R4 Oscilloscope using a 160x80 IPS TFT Version 1.00
  * The max sampling rates is 346ksps with single channel, 141ksps with 2 channels.
  * + Pulse Generator
  * + DAC DDS Function Generator (23 waveforms)
@@ -20,7 +20,7 @@
 #define TFT_DC    5
 //#define TFT_SCLK  13
 //#define TFT_MOSI  11
-Adafruit_ST7735 display = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
+Adafruit_ST7735 display = Adafruit_ST7735(TFT_CS,  TFT_DC, TFT_RST);
 
 #define BUTTON5DIR
 #define EEPROM_START 0
@@ -150,7 +150,7 @@ void setup(){
   display.setRotation(3);
   display.fillScreen(BGCOLOR);
 
-//  Serial.begin(115200); while(!Serial);
+//  Serial.begin(115200); while(!Serial));
 #ifdef EEPROM_START
   loadEEPROM();                         // read last settings from EEPROM
 #else
@@ -171,25 +171,6 @@ void setup(){
   analogRead(A1); // dummy read for setup
 }
 
-#ifdef DOT_GRID
-void DrawGrid() {
-  int disp_leng;
-  if (full_screen) disp_leng = SAMPLES;
-  else disp_leng = DISPLNG;
-  for (int x=0; x<=disp_leng; x += 2) { // Horizontal Line
-    for (int y=LCD_YMAX; y>=0; y -= DOTS_DIV) {
-      display.drawPixel(x, y, GRIDCOLOR);
-//      CheckSW();
-    }
-  }
-  for (int x=0; x<=disp_leng; x += DOTS_DIV ) { // Vertical Line
-    for (int y=LCD_YMAX; y>=0; y -= 2) {
-      display.drawPixel(x, y, GRIDCOLOR);
-//      CheckSW();
-    }
-  }
-}
-#else
 void DrawGrid() {
   int disp_leng;
   if (full_screen) disp_leng = SAMPLES;
@@ -215,7 +196,6 @@ void DrawGrid() {
   }
   if (!full_screen) display.drawFastVLine(DISPLNG, 0, LCD_YMAX, GRIDCOLOR);
 }
-#endif
 
 void displayfreq(double freq) {
   String ss;
@@ -257,7 +237,8 @@ void display_rate(void) {
 }
 
 void display_mode(byte chmode) {
-  display.print(Modes[chmode]); display.print(' ');
+  display.print(Modes[chmode]); 
+  display.print(' '); 
 }
 
 void display_trig_mode(void) {
@@ -295,7 +276,7 @@ void ClearAndDrawGraph() {
   int disp_leng;
   if (full_screen) disp_leng = SAMPLES-1;
   else disp_leng = DISPLNG-1;
-  bool ch1_active = ch1_mode != MODE_OFF && !(rate < RATE_DUAL && ch0_mode != MODE_OFF);
+  bool ch1_active = ch1_mode != MODE_OFF && !(ch0_mode != MODE_OFF && rate < RATE_DUAL);
   if (sample == 0)
     clear = 2;
   else
@@ -356,22 +337,23 @@ void scaleDataArray(byte ad_ch, int trig_point)
   byte *pdata, ch_mode, range, ch;
   short ch_off;
   uint16_t *idata, *qdata;
-  long a;
+  long a, b;
 
   if (ad_ch == ad_ch1) {
     ch_off = ch1_off;
     ch_mode = ch1_mode;
     range = range1;
+    pdata = data[sample+1];
     idata = &cap_buf1[trig_point];
     ch = 1;
   } else {
     ch_off = ch0_off;
     ch_mode = ch0_mode;
     range = range0;
+    pdata = data[sample+0];
     idata = &cap_buf[trig_point];
     ch = 0;
   }
-  pdata = data[sample+ch];
   for (int i = 0; i < SAMPLES; i++) {
     a = ((*idata++ + ch_off) * VREF[range] + 2048) >> 12;
     if (a > LCD_YMAX) a = LCD_YMAX;
@@ -611,10 +593,8 @@ void sample_dual_ms(unsigned int r) { // dual channel. r > 500
 }
 
 void plotFFT() {
-  byte *lastplot, *newplot;
   int ylim = LCD_HEIGHT - 8;
 
-  int clear = (sample == 0) ? 2 : 0;
   for (int i = 0; i < FFT_N; i++) {
     vReal[i] = cap_buf[i];
     vImag[i] = 0.0;
@@ -623,14 +603,10 @@ void plotFFT() {
   FFT.windowing(FFTWindow::Hann, FFTDirection::Forward);  // Weigh data
   FFT.compute(FFTDirection::Forward);                     // Compute FFT
   FFT.complexToMagnitude();                               // Compute magnitudes
-  newplot = data[sample];
-  lastplot = data[clear];
   for (int i = 1; i < FFT_N/2; i++) {
     float db = log10(vReal[i]);
-    int dat = constrain((int)(20.0 * (db - 1.6)), 0, ylim);
-    display.drawFastVLine(i * 2, ylim - lastplot[i], lastplot[i], BGCOLOR); // erase old
+    int dat = constrain((int)(15.0 * db - 20), 0, ylim);
     display.drawFastVLine(i * 2, ylim - dat, dat, CH1COLOR);
-    newplot[i] = dat;
   }
   draw_scale();
 }
@@ -718,7 +694,7 @@ void set_default() {
   range1 = RANGE_MIN;
   ch1_mode = MODE_ON;
   ch1_off = 683;
-  rate = 6;
+  rate = 7;
   trig_mode = TRIG_AUTO;
   trig_lv = 20;
   trig_edge = TRIG_E_UP;
@@ -730,7 +706,7 @@ void set_default() {
   duty = 128;     // PWM 50%
   p_range = 0;    // PWM range
   count = 35999;  // PWM 1kHz
-  dds_mode = false;
+  dds_mode = true;
   wave_id = 0;    // sine wave
   ifreq = 23841;  // 238.41Hz
   time_mag = 1;   // magnify timebase

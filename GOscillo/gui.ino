@@ -548,7 +548,6 @@ void menu3_sw(byte sw) {
     } else if (sw == BTN_LEFT) {  // -
       dds_close();
       dds_mode = wdds = false;
-      clear_dds_frequency();
     }
     break;
   case 3: // WAVE
@@ -644,7 +643,7 @@ void clear_pwm_parameters(void) {
 }
 
 void clear_frequency_count(void) {
-  display.fillRect(DISPLNG - 78, txtLINE6, 78, 8, BGCOLOR); // clear frequency count
+  display.fillRect(LCD_WIDTH - 54, txtLINE7, 54, 8, BGCOLOR); // clear frequency count
 }
 
 void clear_dds_frequency(void) {
