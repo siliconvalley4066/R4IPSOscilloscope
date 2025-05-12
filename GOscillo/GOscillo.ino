@@ -1,5 +1,5 @@
 /*
- * Arduino UNO R4 Oscilloscope using a 160x80 IPS TFT Version 1.01
+ * Arduino UNO R4 Oscilloscope using a 160x80 IPS TFT Version 1.02
  * The max sampling rates is 346ksps with single channel, 141ksps with 2 channels.
  * + Pulse Generator
  * + DAC DDS Function Generator (23 waveforms)
@@ -14,6 +14,7 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h> // Hardware-specific library for ST7735
+#include "FreqCount_R4.h"
 
 #define TFT_CS    6
 #define TFT_RST   -1
@@ -94,7 +95,7 @@ const int TRIG_E_DN = 1;
 #define RATE_DUAL 1
 #define RATE_SLOW 7
 #define RATE_ROLL 13
-#define ITEM_MAX 29
+#define ITEM_MAX 30
 const char Rates[RATE_NUM][5] PROGMEM = {"30us", "70us", "100u", "200u", "500u", " 1ms", " 2ms", " 5ms", "10ms", "20ms", "50ms", "0.1s", "0.2s", "0.5s", " 1s ", " 2s ", " 5s ", " 10s"};
 const unsigned long HREF[] PROGMEM = {30, 70, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000, 5000000, 10000000};
 const float dmahref[2] = {28.8, 70.7};
@@ -122,12 +123,14 @@ int trigger_ad;
 const double sys_clk = (double)F_CPU;
 volatile bool wfft, wdds;
 byte time_mag = 1;  // magnify timebase: 1, 2, 5 or 10
+double compensation = 1.0;  // compensation for frequency counter
+boolean calib = false;      // calibrate flag for frequency counter
 
 #define LEFTPIN   3     // LEFT
 #define RIGHTPIN  9     // RIGHT
 #define UPPIN     7     // UP
 #define DOWNPIN   8     // DOWN
-#define CH0DCSW   2     // DC/AC switch ch0
+#define CH0DCSW   A3    // DC/AC switch ch0
 #define CH1DCSW   4     // DC/AC switch ch1
 
 #define BGCOLOR   ST77XX_BLACK
@@ -217,34 +220,47 @@ void DrawGrid() {
 }
 #endif
 
-void displayfreq(double freq) {
-  String ss;
-  int i, f, l;
-  display.setTextColor(TXTCOLOR, BGCOLOR);
-  for (f = 7; f >= 0; --f) {
-    ss = String(freq, f);
-    if (ss.length() < 10) break;
+void fcount_disp() {
+  unsigned long count;
+  static double dfreq = 0.0;
+  uint8_t status;
+
+  if (!fcount_mode) return;
+  if (status = FreqCount.available()) { // wait finish restart
+    count = FreqCount.read();
+    dfreq = (double) count;
+    if (calib) calibrate(dfreq);
+    calib = false;
   }
-  if ((i = ss.indexOf('.')) > 7)  // i = integer part
-    ss.remove(i, 2);              // remove fractional part for >= 10,000,000Hz
-  l = ss.length();
-  if (i > 3) {  // greater than or equal to 1,000Hz
-    int x = DISPLNG - 78;
-    for (int j = 0; j < (i - 3); ++j) {
-      display.setCursor(x, txtLINE6);
-      display.print(ss.substring(j, j + 1));
-      x += 6;
-      if ((i-j) == 4 || (i-j) == 7) { // small thousand separator
-        display.setCursor(x, txtLINE6);
-        display.print(','); x += 6;
-      }
+  displayfreq(round(dfreq * compensation));
+}
+
+void displayfreq(unsigned long freq) {
+  display.setTextColor(TXTCOLOR, BGCOLOR);
+  String ss = String(freq);
+  int l = ss.length();
+  if (l > 6) {  // greater than or equal to 1,000,000Hz
+    ss = ss.substring(0, l - 6) + "," + ss.substring(l - 6);
+    ++l;
+  }
+  if (l > 3) {  // greater than or equal to 1,000Hz
+    ss = ss.substring(0, l - 3) + "," + ss.substring(l - 3);
+    ++l;
+  }
+  display.setCursor(DISPLNG - 6 * l - 12, txtLINE6);
+  display.print(ss); display.print("Hz");
+}
+
+void calibrate(double freq) {
+  float references[] = {24e6, 20e6, 16e6, 12e6, 10e6, 8e6, 6e6, 5e6,
+          4e6, 3e6, 2e6, 1e6, 1e5, 32768.0};
+  int num = sizeof(references) / sizeof(float);
+  for (int i = 0; i < num; ++i) {
+    double ref = (double) references[i];
+    if ((ref * 0.998) < freq && freq < (ref * 1.002)) { // 2000ppm
+      compensation = ref / (double) freq;
+      break;
     }
-    display.setCursor(x, txtLINE6); display.print(ss.substring(i - 3, l));
-    display.print("Hz");
-    if (i != 7 && i != 9) display.print(' ');
-  } else {  // below 1000Hz
-    display.setCursor(DISPLNG - 78, txtLINE6); display.print(ss);
-    display.print("Hz  ");
   }
 }
 
@@ -465,7 +481,7 @@ void loop() {
     else
       sample = 0;
 
-    if (rate <= RATE_DMA) {         // DMA, min 0.39us sampling (2.57Msps)
+    if (rate <= RATE_DMA) {         // min 2.89us sampling (346ksps)
       sample_usf();                 // single channel sampling
     } else if (rate < RATE_SLOW) {  // dual channel 7us, 10us, 20us, 50us, 100us, 200us sampling
       sample_dual_usf(HREF[rate] / 10);
@@ -706,6 +722,9 @@ void saveEEPROM() {                   // Save the setting value in EEPROM after 
       EEPROM.write(p++, (ifreq >> 16) & 0xff);
       EEPROM.write(p++, (ifreq >> 24) & 0xff);
       EEPROM.write(p++, time_mag);
+      byte *q = (byte *) &compensation;
+      for (int i = 0; i < 8; ++i)
+        EEPROM.write(p++, *q++);
     }
   }
 }
@@ -730,10 +749,11 @@ void set_default() {
   duty = 128;     // PWM 50%
   p_range = 0;    // PWM range
   count = 35999;  // PWM 1kHz
-  dds_mode = false;
+  dds_mode = true;
   wave_id = 0;    // sine wave
   ifreq = 23841;  // 238.41Hz
   time_mag = 1;   // magnify timebase
+  compensation = 1.0; // frequency counter
 }
 
 extern const byte wave_num;
@@ -789,6 +809,11 @@ void loadEEPROM() { // Read setting values from EEPROM (abnormal values will be 
   *((byte *)&ifreq + 3) = EEPROM.read(p++); // ifreq high
   if (ifreq > 999999L) ++error;
   time_mag = EEPROM.read(p++);               // magnify timebase
+  byte *q = (byte *) &compensation;
+  for (int i = 0; i < 8; ++i)
+    *q++ = EEPROM.read(p++);
+  if (compensation < 1.002 && compensation > 0.998) ; // OK
+  else ++error;
   if (error > 0) {
     set_default();
   }

@@ -113,7 +113,8 @@ void DrawText() {
     else
       display.print("MSR1");
     set_line_color(6);
-    display.print("    ");
+    display.print("FCNT");
+    fcount_disp();
     break;
   }
   if (info_mode & 3) {
@@ -473,11 +474,8 @@ void menu2_sw(byte sw) {
     break;
   case 5: // PWM
     if (sw == BTN_RIGHT) {        // +
-      if (fcount_mode == true) {  // stop frequency counter if active
-        fcount_mode = false;
-      }
       update_frq(0);
-      pulse_start();
+//      pulse_start();
       pulse_mode = true;
     } else if (sw == BTN_LEFT) {  // -
       pulse_close();
@@ -494,7 +492,7 @@ void menu2_sw(byte sw) {
       if (pulse_mode) {
         if ((256 - duty) > diff) duty += diff;
       } else {
-        pulse_start();
+//        pulse_start();
       }
       update_frq(0);
       pulse_mode = true;
@@ -502,7 +500,7 @@ void menu2_sw(byte sw) {
       if (pulse_mode) {
         if (duty > diff) duty -= diff;
       } else {
-        pulse_start();
+//        pulse_start();
       }
       update_frq(0);
       pulse_mode = true;
@@ -515,7 +513,7 @@ void menu2_sw(byte sw) {
         update_frq(-diff);
       else {
         update_frq(0);
-        pulse_start();
+//        pulse_start();
       }
       pulse_mode = true;
     } else if (sw == BTN_LEFT) {  // -
@@ -523,7 +521,7 @@ void menu2_sw(byte sw) {
         update_frq(diff);
       else {
         update_frq(0);
-        pulse_start();
+//        pulse_start();
       }
       pulse_mode = true;
     }
@@ -575,7 +573,16 @@ void menu3_sw(byte sw) {
     break;
   case 6: // Frequency Counter
     if (sw == BTN_RIGHT) {        // on
+      if (fcount_mode) {
+        calib = true;
+      } else {
+        fcount_mode = true;
+        FreqCount.begin(1000);
+      }
     } else if (sw == BTN_LEFT) {  // off
+      fcount_mode = false;
+      FreqCount.end();
+      clear_frequency_count();
     }
     break;
   }
@@ -601,9 +608,9 @@ void increment_item() {
   if (item == 29) {
     clear_dds_frequency();
   }
-//  if (item == 0) {
-//    clear_frequency_count();
-//  }
+  if (item == 0) {
+    clear_frequency_count();
+  }
   menu = item >> 3;
 }
 
@@ -618,9 +625,9 @@ void decrement_item() {
   if (item == 25) {
     clear_dds_frequency();
   }
-//  if (item == 23) {
-//    clear_frequency_count();
-//  }
+  if (item == 23) {
+    clear_frequency_count();
+  }
   menu = item >> 3;
 }
 
@@ -644,7 +651,7 @@ void clear_pwm_parameters(void) {
 }
 
 void clear_frequency_count(void) {
-  display.fillRect(DISPLNG - 78, txtLINE6, 78, 8, BGCOLOR); // clear frequency count
+  display.fillRect(DISPLNG - 72, txtLINE6, 72, 8, BGCOLOR); // clear frequency count
 }
 
 void clear_dds_frequency(void) {
