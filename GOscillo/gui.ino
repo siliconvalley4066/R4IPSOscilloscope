@@ -222,6 +222,7 @@ void CheckSW() {
     clear_voltage_area();
     clear_pwm_parameters();
     clear_dds_frequency();
+    clear_frequency_count();
   } else {
     switch (menu) {
     case 0:
@@ -267,12 +268,17 @@ void updown_ch1range(byte sw) {
 void updown_rate(byte sw) {
   if (sw == BTN_RIGHT) {        // RATE FAST
     orate = rate;
-    if (rate > 0) rate --;
+    if (rate > 0) {
+      rate --;
+    }
     if (rate == (RATE_DUAL - 1)) display.fillScreen(BGCOLOR); // dual to single
   } else if (sw == BTN_LEFT) {  // RATE SLOW
     orate = rate;
-    if (rate < RATE_MAX) rate ++;
-    else rate = RATE_MAX;
+    if (rate < RATE_MAX) {
+      rate ++;
+    } else {
+      rate = RATE_MAX;
+    }
   }
   if (rate >= RATE_ROLL) time_mag = 1;
 }
@@ -289,14 +295,14 @@ void menu0_sw(byte sw) {
     updown_rate(sw);
     break;
   case 3: // magnify timebase
-    if (sw == BTN_RIGHT) {        // TRIG MODE +
+    if (sw == BTN_RIGHT) {        // MAG MODE +
       if (time_mag == 1)
         time_mag = 2;
       else if (time_mag == 2)
         time_mag = 5;
       else
         time_mag = 10;
-    } else if (sw == BTN_LEFT) {  // TRIG MODE -
+    } else if (sw == BTN_LEFT) {  // MAG MODE -
       if (time_mag == 5)
         time_mag = 2;
       else if (time_mag == 10)
@@ -359,7 +365,21 @@ void menu0_sw(byte sw) {
 }
 
 void menu1_sw(byte sw) {  
+  int diff;
   switch (item - 8) {
+  case 0: // CH0 mode
+    diff = 1;
+    if (sw == lastsw) {
+      if (millis() - vtime > 3000) diff = 8;
+    }
+    if (sw == BTN_RIGHT) {        // MAG pos +
+      if (mag_pos < (SAMPLES - SAMPLES/time_mag - diff))
+        mag_pos += diff;
+    } else if (sw == BTN_LEFT) {  // MAG pos -
+      if (mag_pos > (diff - 1))
+        mag_pos -= diff;
+    }
+    break;
   case 1: // CH0 mode
     if (sw == BTN_RIGHT) {        // CH0 + ON/INV
       if (ch0_mode == MODE_ON)
@@ -651,7 +671,7 @@ void clear_pwm_parameters(void) {
 }
 
 void clear_frequency_count(void) {
-  display.fillRect(DISPLNG - 72, txtLINE6, 72, 8, BGCOLOR); // clear frequency count
+  display.fillRect(DISPLNG - 78, txtLINE6, 78, 8, BGCOLOR); // clear frequency count
 }
 
 void clear_dds_frequency(void) {
@@ -664,4 +684,13 @@ void clear_frequency_area(void) {
 
 void clear_voltage_area(void) {
   display.fillRect(textINFO, txtLINE2, 48, 28, BGCOLOR);  // clear voltage area
+}
+
+void mag_bar(void) {
+  if (!full_screen)
+    display.drawFastHLine(DISPLNG, LCD_YMAX, LCD_WIDTH - DISPLNG, BGCOLOR);
+  if (time_mag > 1) {
+    int bar = SAMPLES / time_mag;
+    display.drawFastHLine(mag_pos, LCD_YMAX, bar, ST77XX_CYAN);
+  }
 }

@@ -1,9 +1,9 @@
 /*
- * Arduino UNO R4 Oscilloscope using a 160x80 IPS TFT Version 1.02
+ * Arduino UNO R4 Oscilloscope using a 160x80 IPS TFT Version 1.03
  * The max sampling rates is 346ksps with single channel, 141ksps with 2 channels.
  * + Pulse Generator
  * + DAC DDS Function Generator (23 waveforms)
- * Copyright (c) 2025, Siliconvalley4066
+ * Copyright (c) 2025,2026, Siliconvalley4066
  */
 /*
  * Arduino Oscilloscope using a graphic LCD
@@ -57,8 +57,8 @@ extern unsigned short count;
 extern long ifreq;
 extern byte wave_id;
 
-const int LCD_WIDTH = 160;
-const int LCD_HEIGHT = 80;
+#define LCD_WIDTH 160
+#define LCD_HEIGHT 80
 const int LCD_YMAX = 79;
 const int SAMPLES = 160;
 const int NSAMP = 512;
@@ -125,6 +125,8 @@ volatile bool wfft, wdds;
 byte time_mag = 1;  // magnify timebase: 1, 2, 5 or 10
 double compensation = 1.0;  // compensation for frequency counter
 boolean calib = false;      // calibrate flag for frequency counter
+int trigger_pos;
+int mag_pos = 0;
 
 #define LEFTPIN   3     // LEFT
 #define RIGHTPIN  9     // RIGHT
@@ -149,6 +151,7 @@ void setup(){
   pinMode(DOWNPIN, INPUT_PULLUP);   // down
   pinMode(RIGHTPIN, INPUT_PULLUP);  // right
   pinMode(LEFTPIN, INPUT_PULLUP);   // left
+  // pinMode(LED_BUILTIN, OUTPUT);     // this pin is used for SCLK of SPI
   display.initR(INITR_MINI160x80_PLUGIN);  // Init ST7735S mini display
   display.setRotation(3);
   display.fillScreen(BGCOLOR);
@@ -182,15 +185,15 @@ void DrawGrid() {
   for (int x=0; x<=disp_leng; x += 2) { // Horizontal Line
     for (int y=LCD_YMAX; y>=0; y -= DOTS_DIV) {
       display.drawPixel(x, y, GRIDCOLOR);
-//      CheckSW();
     }
   }
+  CheckSW();
   for (int x=0; x<=disp_leng; x += DOTS_DIV ) { // Vertical Line
     for (int y=LCD_YMAX; y>=0; y -= 2) {
       display.drawPixel(x, y, GRIDCOLOR);
-//      CheckSW();
     }
   }
+  CheckSW();
 }
 #else
 void DrawGrid() {
@@ -204,7 +207,7 @@ void DrawGrid() {
 
   for (int y = 9; y <= LCD_YMAX; y += DOTS_DIV) {
     if (y > 0){
-      display.drawFastHLine(1, y, disp_leng - 1, GRIDCOLOR);  // Draw 9 horizontal lines
+      display.drawFastHLine(0, y, disp_leng, GRIDCOLOR);  // Draw 9 horizontal lines
     }
     for (int i = 5; i < DOTS_DIV; i += 5) {
       display.drawFastHLine(LCD_WIDTH / 2 - 2, y - i, 5, GRIDCOLOR);  // Draw the vertical center line ticks
@@ -288,7 +291,11 @@ void display_ac(byte pin) {
 void set_line_color(byte line) {
   if ((item & 0x7) == line) display.setTextColor(BGCOLOR, TXTCOLOR);  // highlight
   else display.setTextColor(TXTCOLOR, BGCOLOR);           // normal
-  display.setCursor(DISPTXT, 10 * line + 1);  // locate curser for printing text
+#if LCD_HEIGHT == 64
+  display.setCursor(DISPTXT, 8 * line); // locate curser for printing text
+#elif LCD_HEIGHT == 80
+  display.setCursor(DISPTXT, 10 * line + 1); // locate curser for printing text
+#endif
 }
 
 void DrawGrid(int x) {
@@ -374,6 +381,7 @@ void scaleDataArray(byte ad_ch, int trig_point)
   uint16_t *idata, *qdata;
   long a;
 
+  trigger_pos = trig_point;
   if (ad_ch == ad_ch1) {
     ch_off = ch1_off;
     ch_mode = ch1_mode;
@@ -389,22 +397,25 @@ void scaleDataArray(byte ad_ch, int trig_point)
   }
   pdata = data[sample+ch];
   for (int i = 0; i < SAMPLES; i++) {
-    a = ((*idata++ + ch_off) * VREF[range] + 2048) >> 12;
+    a = ((*idata + ch_off) * VREF[range] + 2048) >> 12;
     if (a > LCD_YMAX) a = LCD_YMAX;
     else if (a < 0) a = 0;
     if (ch_mode == MODE_INV)
       a = LCD_YMAX - a;
     *pdata++ = (byte) a;
+    ++idata;
   }
   if (rate < RATE_ROLL) {
     switch (time_mag) {
     case 2:
     case 5:
     case 10:
-      mag(data[sample+ch], time_mag); // magnify timebase for display
+      mag_pos = constrain(mag_pos, 0, SAMPLES - SAMPLES/time_mag - 5);
+      mag(data[sample+ch], time_mag, mag_pos);  // magnify timebase for display
       break;
-    default:  // do nothing
+    default:
       time_mag = 1;   // fix odd value
+      mag_pos = 0;    // reset the position
       break;
     }
   }
@@ -549,7 +560,9 @@ void draw_screen() {
     plotFFT();
   } else {
     DrawGrid();
+    mag_bar();
     ClearAndDrawGraph();
+    CheckSW();
     if (!full_screen) DrawText();
   }
 }
@@ -631,8 +644,12 @@ void plotFFT() {
   int ylim = LCD_HEIGHT - 8;
 
   int clear = (sample == 0) ? 2 : 0;
+  int j = 0;
+  if (rate <= RATE_DMA) {
+      j = trigger_pos;
+  }
   for (int i = 0; i < FFT_N; i++) {
-    vReal[i] = cap_buf[i];
+    vReal[i] = cap_buf[j++];
     vImag[i] = 0.0;
   }
   FFT.dcRemoval();
@@ -736,7 +753,7 @@ void set_default() {
   ch0_off = 0;
   range1 = RANGE_MIN;
   ch1_mode = MODE_ON;
-  ch1_off = 683;
+  ch1_off = 2048;
   rate = 6;
   trig_mode = TRIG_AUTO;
   trig_lv = 20;
