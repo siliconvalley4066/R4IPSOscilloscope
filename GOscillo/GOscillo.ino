@@ -1,5 +1,5 @@
 /*
- * Arduino UNO R4 Oscilloscope using a 160x80 IPS TFT Version 1.05
+ * Arduino UNO R4 Oscilloscope using a 160x80 IPS TFT Version 1.06
  * The max sampling rates is 1.07Msps with single channel, 100ksps with 2 channels.
  * + Pulse Generator
  * + DAC DDS Function Generator (23 waveforms)
